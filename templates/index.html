@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>URL Analyzer — Security Scanner</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --neon-cyan: #00f5ff;
+    --neon-green: #39ff14;
+    --neon-red: #ff003c;
+    --neon-orange: #ff6b00;
+    --dark-bg: #030712;
+    --panel-bg: rgba(6, 18, 35, 0.85);
+    --border: rgba(0, 245, 255, 0.2);
+    --text-main: #c8e6f5;
+    --text-dim: #4a7a99;
+    --glow-cyan: 0 0 20px rgba(0,245,255,0.5), 0 0 60px rgba(0,245,255,0.15);
+    --glow-green: 0 0 20px rgba(57,255,20,0.5), 0 0 60px rgba(57,255,20,0.15);
+    --glow-red: 0 0 20px rgba(255,0,60,0.6), 0 0 60px rgba(255,0,60,0.2);
+    --glow-orange: 0 0 20px rgba(255,107,0,0.5), 0 0 60px rgba(255,107,0,0.15);
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--dark-bg);
+    color: var(--text-main);
+    font-family: 'Rajdhani', sans-serif;
+    overflow-x: hidden;
+  }
+
+  /* ─── 3D CANVAS BACKGROUND ─── */
+  #bg-canvas {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  /* ─── SCANLINE OVERLAY ─── */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    animation: scanlines 8s linear infinite;
+  }
+  @keyframes scanlines {
+    0% { background-position: 0 0; }
+    100% { background-position: 0 100vh; }
+  }
+
+  /* ─── MAIN LAYOUT ─── */
+  .app {
+    position: relative;
+    z-index: 2;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px 60px;
+  }
+
+  /* ─── HEADER ─── */
+  header {
+    text-align: center;
+    margin-bottom: 44px;
+    animation: fadeDown 0.8s ease both;
+  }
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-30px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .logo-ring {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 16px;
+    position: relative;
+  }
+  .logo-ring svg { width: 100%; height: 100%; }
+  .ring-spin { animation: ringRotate 4s linear infinite; transform-origin: center; }
+  @keyframes ringRotate { to { transform: rotate(360deg); } }
+
+  h1 {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(1.6rem, 4vw, 2.8rem);
+    font-weight: 900;
+    letter-spacing: 0.15em;
+    color: var(--neon-cyan);
+    text-shadow: var(--glow-cyan);
+    text-transform: uppercase;
+  }
+  .tagline {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    letter-spacing: 0.3em;
+    margin-top: 6px;
+    text-transform: uppercase;
+  }
+
+  /* ─── INPUT PANEL ─── */
+  .input-panel {
+    width: 100%;
+    max-width: 760px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    backdrop-filter: blur(12px);
+    padding: 28px;
+    margin-bottom: 32px;
+    box-shadow: 0 0 40px rgba(0,245,255,0.05), inset 0 1px 0 rgba(0,245,255,0.1);
+    animation: fadeUp 0.8s 0.2s ease both;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(30px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .panel-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--neon-cyan);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    opacity: 0.7;
+  }
+
+  .input-row {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  #url-input {
+    flex: 1;
+    background: rgba(0, 245, 255, 0.04);
+    border: 1px solid rgba(0, 245, 255, 0.25);
+    border-radius: 3px;
+    color: var(--neon-cyan);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 1rem;
+    padding: 14px 18px;
+    outline: none;
+    transition: all 0.3s;
+    letter-spacing: 0.05em;
+  }
+  #url-input::placeholder { color: rgba(0,245,255,0.25); }
+  #url-input:focus {
+    border-color: var(--neon-cyan);
+    box-shadow: var(--glow-cyan), inset 0 0 20px rgba(0,245,255,0.04);
+  }
+
+  #scan-btn {
+    background: transparent;
+    border: 1px solid var(--neon-cyan);
+    color: var(--neon-cyan);
+    font-family: 'Orbitron', monospace;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    padding: 14px 28px;
+    border-radius: 3px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  #scan-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--neon-cyan);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.3s ease;
+    z-index: -1;
+  }
+  #scan-btn:hover {
+    color: var(--dark-bg);
+    box-shadow: var(--glow-cyan);
+    text-shadow: none;
+  }
+  #scan-btn:hover::before { transform: scaleX(1); }
+  #scan-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ─── LOADING ─── */
+  .loading {
+    display: none;
+    width: 100%;
+    max-width: 760px;
+    text-align: center;
+    padding: 40px;
+    animation: fadeUp 0.4s ease both;
+  }
+  .loading.active { display: block; }
+
+  .scan-animation {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    margin: 0 auto 20px;
+  }
+  .scan-circle {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    border-top-color: var(--neon-cyan);
+    animation: spin 1s linear infinite;
+  }
+  .scan-circle:nth-child(2) {
+    inset: 12px;
+    border-top-color: rgba(0,245,255,0.4);
+    animation-duration: 1.5s;
+    animation-direction: reverse;
+  }
+  .scan-circle:nth-child(3) {
+    inset: 24px;
+    border-top-color: rgba(0,245,255,0.2);
+    animation-duration: 2s;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .scan-dot {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+  }
+  .loading-text {
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--neon-cyan);
+    font-size: 0.85rem;
+    letter-spacing: 0.2em;
+    animation: blink 1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ─── RESULTS ─── */
+  #results {
+    width: 100%;
+    max-width: 760px;
+    display: none;
+    animation: fadeUp 0.6s ease both;
+  }
+  #results.active { display: block; }
+
+  /* Verdict Banner */
+  .verdict-banner {
+    border-radius: 4px;
+    padding: 28px 32px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .verdict-banner::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0.06;
+  }
+  .verdict-safe {
+    border: 1px solid var(--neon-green);
+    box-shadow: var(--glow-green), inset 0 0 40px rgba(57,255,20,0.05);
+    background: rgba(57,255,20,0.04);
+  }
+  .verdict-safe .verdict-icon { color: var(--neon-green); text-shadow: var(--glow-green); }
+  .verdict-suspicious {
+    border: 1px solid var(--neon-orange);
+    box-shadow: var(--glow-orange), inset 0 0 40px rgba(255,107,0,0.05);
+    background: rgba(255,107,0,0.04);
+  }
+  .verdict-suspicious .verdict-icon { color: var(--neon-orange); text-shadow: var(--glow-orange); }
+  .verdict-dangerous {
+    border: 1px solid var(--neon-red);
+    box-shadow: var(--glow-red), inset 0 0 40px rgba(255,0,60,0.08);
+    background: rgba(255,0,60,0.05);
+    animation: dangerPulse 2s ease infinite;
+  }
+  @keyframes dangerPulse {
+    0%, 100% { box-shadow: var(--glow-red), inset 0 0 40px rgba(255,0,60,0.08); }
+    50% { box-shadow: 0 0 40px rgba(255,0,60,0.8), 0 0 80px rgba(255,0,60,0.3), inset 0 0 40px rgba(255,0,60,0.12); }
+  }
+  .verdict-dangerous .verdict-icon { color: var(--neon-red); text-shadow: var(--glow-red); }
+
+  .verdict-icon { font-size: 3rem; line-height: 1; }
+  .verdict-content { flex: 1; }
+  .verdict-label {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.8rem;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .verdict-safe .verdict-label { color: var(--neon-green); }
+  .verdict-suspicious .verdict-label { color: var(--neon-orange); }
+  .verdict-dangerous .verdict-label { color: var(--neon-red); }
+
+  .verdict-url {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    margin-top: 4px;
+    word-break: break-all;
+  }
+
+  .risk-meter {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 80px;
+  }
+  .risk-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    letter-spacing: 0.2em;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+  .risk-score {
+    font-family: 'Orbitron', monospace;
+    font-size: 2.2rem;
+    font-weight: 900;
+    line-height: 1;
+  }
+  .risk-score-unit {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    margin-top: 2px;
+    letter-spacing: 0.15em;
+  }
+
+  /* ─── CARDS GRID ─── */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 560px) { .cards-grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 20px;
+    backdrop-filter: blur(10px);
+    transition: border-color 0.3s, box-shadow 0.3s;
+    animation: fadeUp 0.5s ease both;
+  }
+  .card:hover {
+    border-color: rgba(0,245,255,0.4);
+    box-shadow: 0 0 20px rgba(0,245,255,0.08);
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(0,245,255,0.1);
+  }
+  .card-icon { font-size: 1.3rem; }
+  .card-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--neon-cyan);
+  }
+  .status-badge {
+    margin-left: auto;
+    padding: 3px 10px;
+    border-radius: 2px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .badge-ok { background: rgba(57,255,20,0.12); color: var(--neon-green); border: 1px solid rgba(57,255,20,0.3); }
+  .badge-warn { background: rgba(255,107,0,0.12); color: var(--neon-orange); border: 1px solid rgba(255,107,0,0.3); }
+  .badge-fail { background: rgba(255,0,60,0.12); color: var(--neon-red); border: 1px solid rgba(255,0,60,0.3); }
+
+  .card-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    gap: 12px;
+  }
+  .card-row:last-child { border-bottom: none; }
+  .row-key {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+  .row-val {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--text-main);
+    text-align: right;
+    word-break: break-all;
+  }
+  .val-green { color: var(--neon-green); }
+  .val-red { color: var(--neon-red); }
+  .val-orange { color: var(--neon-orange); }
+  .val-dim { color: var(--text-dim); }
+
+  /* redirect chain */
+  .chain-list { list-style: none; }
+  .chain-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(0,245,255,0.06);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.72rem;
+  }
+  .chain-item:last-child { border-bottom: none; }
+  .chain-num {
+    background: rgba(0,245,255,0.1);
+    color: var(--neon-cyan);
+    border-radius: 2px;
+    padding: 1px 6px;
+    font-size: 0.65rem;
+    white-space: nowrap;
+    min-width: 24px;
+    text-align: center;
+  }
+  .chain-url { color: var(--text-main); word-break: break-all; flex: 1; }
+  .chain-code { color: var(--text-dim); white-space: nowrap; }
+
+  /* flags */
+  .flag-list { list-style: none; }
+  .flag-item {
+    display: flex;
+    gap: 8px;
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(255,0,60,0.07);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.88rem;
+    color: var(--text-main);
+    line-height: 1.4;
+  }
+  .flag-item:last-child { border-bottom: none; }
+  .flag-dot { color: var(--neon-red); font-size: 1.1rem; margin-top: 1px; }
+
+  .signal-item {
+    display: flex;
+    gap: 8px;
+    padding: 6px 0;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.88rem;
+    color: var(--neon-green);
+  }
+
+  .no-flags {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--neon-green);
+    text-align: center;
+    padding: 12px;
+  }
+
+  /* full-width card */
+  .card-full { grid-column: 1 / -1; }
+
+  /* ─── ERROR ─── */
+  .error-box {
+    display: none;
+    background: rgba(255,0,60,0.06);
+    border: 1px solid rgba(255,0,60,0.3);
+    border-radius: 4px;
+    padding: 20px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--neon-red);
+    max-width: 760px;
+    width: 100%;
+    animation: fadeUp 0.4s ease both;
+  }
+  .error-box.active { display: block; }
+
+  /* ─── FOOTER ─── */
+  footer {
+    margin-top: 48px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    letter-spacing: 0.15em;
+    text-align: center;
+    opacity: 0.5;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+
+<div class="app">
+
+  <header>
+    <div class="logo-ring">
+      <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="40" cy="40" r="36" stroke="rgba(0,245,255,0.15)" stroke-width="1"/>
+        <g class="ring-spin">
+          <circle cx="40" cy="40" r="36" stroke="url(#grad1)" stroke-width="2" stroke-dasharray="60 170" stroke-linecap="round"/>
+        </g>
+        <circle cx="40" cy="40" r="24" stroke="rgba(0,245,255,0.08)" stroke-width="1"/>
+        <text x="40" y="46" text-anchor="middle" font-family="Orbitron" font-size="18" fill="#00f5ff" filter="url(#glow)">🛡</text>
+        <defs>
+          <linearGradient id="grad1" x1="0" y1="0" x2="80" y2="80" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#00f5ff"/>
+            <stop offset="100%" stop-color="transparent"/>
+          </linearGradient>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="2" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+      </svg>
+    </div>
+    <h1>URL Analyzer</h1>
+    <p class="tagline">// Advanced Security Scanner //</p>
+  </header>
+
+  <div class="input-panel">
+    <div class="panel-label">// Enter Target URL</div>
+    <div class="input-row">
+      <input id="url-input" type="text" placeholder="https://example.com" autocomplete="off" spellcheck="false"/>
+      <button id="scan-btn" onclick="scanURL()">⚡ SCAN</button>
+    </div>
+  </div>
+
+  <div class="loading" id="loading">
+    <div class="scan-animation">
+      <div class="scan-circle"></div>
+      <div class="scan-circle"></div>
+      <div class="scan-circle"></div>
+      <div class="scan-dot">🔍</div>
+    </div>
+    <div class="loading-text">SCANNING TARGET...</div>
+  </div>
+
+  <div class="error-box" id="error-box"></div>
+
+  <div id="results">
+    <div class="verdict-banner" id="verdict-banner">
+      <div class="verdict-icon" id="verdict-icon"></div>
+      <div class="verdict-content">
+        <div class="verdict-label" id="verdict-label"></div>
+        <div class="verdict-url" id="verdict-url"></div>
+      </div>
+      <div class="risk-meter">
+        <div class="risk-label">Risk Score</div>
+        <div class="risk-score" id="risk-score"></div>
+        <div class="risk-score-unit">/ 100</div>
+      </div>
+    </div>
+
+    <div class="cards-grid">
+
+      <!-- SSL Card -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-icon">🔒</span>
+          <span class="card-title">SSL Status</span>
+          <span class="status-badge" id="ssl-badge"></span>
+        </div>
+        <div id="ssl-body"></div>
+      </div>
+
+      <!-- Domain Age Card -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-icon">📅</span>
+          <span class="card-title">Domain Age</span>
+          <span class="status-badge" id="age-badge"></span>
+        </div>
+        <div id="age-body"></div>
+      </div>
+
+      <!-- Blacklist Card -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-icon">🚫</span>
+          <span class="card-title">Threat Flags</span>
+          <span class="status-badge" id="bl-badge"></span>
+        </div>
+        <div id="bl-body"></div>
+      </div>
+
+      <!-- Redirect Chain Card -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-icon">↪</span>
+          <span class="card-title">Redirect Chain</span>
+          <span class="status-badge" id="rd-badge"></span>
+        </div>
+        <div id="rd-body"></div>
+      </div>
+
+      <!-- Positive Signals — full width if exists -->
+      <div class="card card-full" id="signals-card" style="display:none">
+        <div class="card-header">
+          <span class="card-icon">✅</span>
+          <span class="card-title">Positive Signals</span>
+        </div>
+        <div id="signals-body"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <footer>URL SENTINEL v1.0 // SECURITY SCANNER // POWERED BY PYTHON + WHOIS + SSL INTEL</footer>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════
+   3D BACKGROUND — THREE.JS-STYLE via Canvas API
+   Floating hex grid nodes with animated beams
+═══════════════════════════════════════════════ */
+(function() {
+  const canvas = document.getElementById('bg-canvas');
+  const ctx = canvas.getContext('2d');
+
+  let W, H, nodes = [], beams = [], particles = [];
+
+  function resize() {
+    W = canvas.width  = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', () => { resize(); init(); });
+  resize();
+
+  // Generate hex-grid nodes
+  function init() {
+    nodes = [];
+    const cols = Math.ceil(W / 120) + 2;
+    const rows = Math.ceil(H / 104) + 2;
+    const hexW = 120, hexH = 104;
+
+    for (let r = -1; r < rows; r++) {
+      for (let c = -1; c < cols; c++) {
+        const x = c * hexW + (r % 2) * 60;
+        const y = r * hexH * 0.75;
+        const depth = 0.3 + Math.random() * 0.7;
+        nodes.push({
+          x, y, depth,
+          pulsePhase: Math.random() * Math.PI * 2,
+          pulseSpeed: 0.3 + Math.random() * 0.5,
+          size: 2 + Math.random() * 3 * depth,
+          connected: []
+        });
+      }
+    }
+
+    // Connect nearby nodes
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const dx = nodes[i].x - nodes[j].x;
+        const dy = nodes[i].y - nodes[j].y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 140 && Math.random() > 0.4) {
+          nodes[i].connected.push(j);
+        }
+      }
+    }
+
+    // Animated beam particles
+    particles = [];
+    for (let i = 0; i < 18; i++) spawnParticle();
+  }
+
+  function spawnParticle() {
+    const srcIdx = Math.floor(Math.random() * nodes.length);
+    const src = nodes[srcIdx];
+    if (!src.connected.length) return;
+    const dstIdx = src.connected[Math.floor(Math.random() * src.connected.length)];
+    const dst = nodes[dstIdx];
+    particles.push({
+      x: src.x, y: src.y,
+      dx: dst.x - src.x, dy: dst.y - src.y,
+      t: 0, speed: 0.004 + Math.random() * 0.006,
+      depth: (src.depth + dst.depth) / 2,
+      color: Math.random() > 0.3 ? '#00f5ff' : '#39ff14'
+    });
+  }
+
+  let t = 0;
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    // Draw connections
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      for (const j of n.connected) {
+        const m = nodes[j];
+        const alpha = 0.04 + (n.depth + m.depth) * 0.04;
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(0,245,255,${alpha})`;
+        ctx.lineWidth = 0.5;
+        ctx.moveTo(n.x, n.y);
+        ctx.lineTo(m.x, m.y);
+        ctx.stroke();
+      }
+    }
+
+    // Draw nodes
+    for (const n of nodes) {
+      const pulse = 0.5 + 0.5 * Math.sin(t * n.pulseSpeed + n.pulsePhase);
+      const alpha = 0.15 + 0.4 * pulse * n.depth;
+      const r = n.size * (0.8 + 0.2 * pulse);
+
+      // Glow
+      const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r * 5);
+      grad.addColorStop(0, `rgba(0,245,255,${alpha * 0.6})`);
+      grad.addColorStop(1, 'transparent');
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r * 5, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Core
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(0,245,255,${alpha * 2})`;
+      ctx.fill();
+    }
+
+    // Animate particles along edges
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.t += p.speed;
+      if (p.t >= 1) {
+        particles.splice(i, 1);
+        spawnParticle();
+        continue;
+      }
+      const px = p.x + p.dx * p.t;
+      const py = p.y + p.dy * p.t;
+      const alpha = 0.5 + 0.5 * Math.sin(p.t * Math.PI);
+
+      // Trail
+      ctx.beginPath();
+      ctx.arc(px, py, 2.5 * p.depth, 0, Math.PI * 2);
+      ctx.fillStyle = p.color === '#00f5ff'
+        ? `rgba(0,245,255,${alpha * p.depth})`
+        : `rgba(57,255,20,${alpha * p.depth})`;
+      ctx.fill();
+
+      // Glow
+      const g = ctx.createRadialGradient(px, py, 0, px, py, 10);
+      g.addColorStop(0, p.color === '#00f5ff'
+        ? `rgba(0,245,255,${alpha * 0.3 * p.depth})`
+        : `rgba(57,255,20,${alpha * 0.3 * p.depth})`);
+      g.addColorStop(1, 'transparent');
+      ctx.beginPath();
+      ctx.arc(px, py, 10, 0, Math.PI * 2);
+      ctx.fillStyle = g;
+      ctx.fill();
+    }
+
+    // Slow horizontal scan line
+    const scanY = (t * 30) % H;
+    const sg = ctx.createLinearGradient(0, scanY - 20, 0, scanY + 20);
+    sg.addColorStop(0, 'transparent');
+    sg.addColorStop(0.5, 'rgba(0,245,255,0.04)');
+    sg.addColorStop(1, 'transparent');
+    ctx.fillStyle = sg;
+    ctx.fillRect(0, scanY - 20, W, 40);
+
+    t += 0.016;
+    requestAnimationFrame(draw);
+  }
+
+  init();
+  draw();
+})();
+
+/* ═══════════════════════════════════════════════
+   URL CHECKER LOGIC
+═══════════════════════════════════════════════ */
+const API_BASE = "http://localhost:5000";
+
+function row(key, val, cls = '') {
+  return `<div class="card-row">
+    <span class="row-key">${key}</span>
+    <span class="row-val ${cls}">${val}</span>
+  </div>`;
+}
+
+async function scanURL() {
+  const url = document.getElementById('url-input').value.trim();
+  if (!url) {
+    document.getElementById('url-input').focus();
+    return;
+  }
+
+  // Show loading
+  document.getElementById('loading').classList.add('active');
+  document.getElementById('results').classList.remove('active');
+  document.getElementById('error-box').classList.remove('active');
+  document.getElementById('scan-btn').disabled = true;
+
+  try {
+    const resp = await fetch(`${API_BASE}/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.error || 'Server error');
+    }
+
+    const data = await resp.json();
+    renderResults(data);
+
+  } catch (e) {
+    const eb = document.getElementById('error-box');
+    eb.innerHTML = `⛔ ERROR: ${e.message}<br><br>
+      <span style="color:var(--text-dim);font-size:0.75rem">
+      Make sure the Python backend is running:<br>
+      pip install flask flask-cors requests python-whois<br>
+      python app.py
+      </span>`;
+    eb.classList.add('active');
+  } finally {
+    document.getElementById('loading').classList.remove('active');
+    document.getElementById('scan-btn').disabled = false;
+  }
+}
+
+function renderResults(d) {
+  const v = d.verdict;
+  const vClass = v.verdict === 'SAFE' ? 'verdict-safe'
+               : v.verdict === 'SUSPICIOUS' ? 'verdict-suspicious'
+               : 'verdict-dangerous';
+
+  // Verdict banner
+  const banner = document.getElementById('verdict-banner');
+  banner.className = `verdict-banner ${vClass}`;
+  document.getElementById('verdict-icon').textContent = v.icon;
+  document.getElementById('verdict-label').textContent = v.verdict;
+  document.getElementById('verdict-url').textContent = d.url;
+
+  const rs = document.getElementById('risk-score');
+  rs.textContent = v.risk_score;
+  rs.className = `risk-score ${v.verdict==='SAFE'?'val-green':v.verdict==='SUSPICIOUS'?'val-orange':'val-red'}`;
+
+  // SSL
+  const ssl = d.ssl;
+  const sslBadge = document.getElementById('ssl-badge');
+  let sslHtml = '';
+  if (ssl.error) {
+    sslBadge.className = 'status-badge badge-fail';
+    sslBadge.textContent = 'FAIL';
+    sslHtml = row('Status', ssl.error, 'val-red');
+  } else {
+    const ok = ssl.valid;
+    sslBadge.className = `status-badge ${ok ? 'badge-ok' : 'badge-fail'}`;
+    sslBadge.textContent = ok ? 'VALID' : 'INVALID';
+    sslHtml += row('Certificate', ok ? 'Valid ✓' : 'Expired / Invalid', ok ? 'val-green' : 'val-red');
+    if (ssl.issuer) sslHtml += row('Issuer', ssl.issuer);
+    if (ssl.expiry_date) sslHtml += row('Expires', ssl.expiry_date);
+    if (ssl.days_until_expiry !== null) {
+      const cls = ssl.days_until_expiry < 15 ? 'val-red' : ssl.days_until_expiry < 30 ? 'val-orange' : 'val-green';
+      sslHtml += row('Days Left', ssl.days_until_expiry, cls);
+    }
+  }
+  document.getElementById('ssl-body').innerHTML = sslHtml;
+
+  // Domain Age
+  const age = d.domain_age;
+  const ageBadge = document.getElementById('age-badge');
+  let ageHtml = '';
+  if (age.error || age.age_days === null) {
+    ageBadge.className = 'status-badge badge-warn';
+    ageBadge.textContent = 'UNKNOWN';
+    ageHtml = row('Status', age.error || 'Could not verify', 'val-dim');
+  } else {
+    const ageClass = age.age_days < 30 ? 'badge-fail' : age.age_days < 180 ? 'badge-warn' : 'badge-ok';
+    ageBadge.className = `status-badge ${ageClass}`;
+    ageBadge.textContent = age.age_days < 30 ? 'NEW' : age.age_days < 180 ? 'YOUNG' : 'MATURE';
+    ageHtml += row('Registered', age.registered_on || '—');
+    ageHtml += row('Age', `${age.age_years} years (${age.age_days} days)`,
+                   age.age_days < 30 ? 'val-red' : age.age_days < 180 ? 'val-orange' : 'val-green');
+    if (age.registrar) ageHtml += row('Registrar', age.registrar);
+    if (age.expiry_date) ageHtml += row('Expires', age.expiry_date);
+  }
+  document.getElementById('age-body').innerHTML = ageHtml;
+
+  // Blacklist / Flags
+  const bl = d.blacklist;
+  const blBadge = document.getElementById('bl-badge');
+  blBadge.className = `status-badge ${bl.flagged ? 'badge-fail' : 'badge-ok'}`;
+  blBadge.textContent = bl.flagged ? `${bl.flag_count} FLAG${bl.flag_count>1?'S':''}` : 'CLEAN';
+  let blHtml = '';
+  if (!bl.flagged) {
+    blHtml = '<div class="no-flags">✓ No threats detected</div>';
+  } else {
+    blHtml = '<ul class="flag-list">';
+    for (const f of bl.flags) {
+      blHtml += `<li class="flag-item"><span class="flag-dot">◈</span><span>${f}</span></li>`;
+    }
+    blHtml += '</ul>';
+  }
+  document.getElementById('bl-body').innerHTML = blHtml;
+
+  // Redirects
+  const rd = d.redirects;
+  const rdBadge = document.getElementById('rd-badge');
+  const hopClass = rd.hops === 0 ? 'badge-ok' : rd.hops <= 2 ? 'badge-warn' : 'badge-fail';
+  rdBadge.className = `status-badge ${hopClass}`;
+  rdBadge.textContent = `${rd.hops} HOP${rd.hops !== 1 ? 'S' : ''}`;
+  let rdHtml = '<ul class="chain-list">';
+  rd.chain.forEach((step, i) => {
+    const codeColor = step.status_code >= 300 && step.status_code < 400
+      ? 'style="color:var(--neon-orange)"'
+      : step.status_code >= 200 && step.status_code < 300
+      ? 'style="color:var(--neon-green)"'
+      : 'style="color:var(--neon-red)"';
+    rdHtml += `<li class="chain-item">
+      <span class="chain-num">${i+1}</span>
+      <span class="chain-url">${step.url}</span>
+      <span class="chain-code" ${codeColor}>${step.status_code || '—'}</span>
+    </li>`;
+  });
+  rdHtml += '</ul>';
+  document.getElementById('rd-body').innerHTML = rdHtml;
+
+  // Positive signals
+  const sc = document.getElementById('signals-card');
+  if (v.positive_signals && v.positive_signals.length > 0) {
+    sc.style.display = 'block';
+    let sigHtml = '';
+    for (const s of v.positive_signals) {
+      sigHtml += `<div class="signal-item"><span>✓</span><span>${s}</span></div>`;
+    }
+    document.getElementById('signals-body').innerHTML = sigHtml;
+  } else {
+    sc.style.display = 'none';
+  }
+
+  document.getElementById('results').classList.add('active');
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// Enter key support
+document.getElementById('url-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') scanURL();
+});
+</script>
+</body>
+</html>
